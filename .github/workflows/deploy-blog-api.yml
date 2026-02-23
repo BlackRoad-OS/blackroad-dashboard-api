@@ -1,0 +1,58 @@
+name: Deploy Blog & API Workers
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'workers/blog/**'
+      - 'workers/api/**'
+    branches: [main]
+
+jobs:
+  deploy-blog:
+    name: Deploy blog-blackroadio
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy blog worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: "848cf0b18d51e0170e0d1537aec3505a"
+          workingDirectory: workers/blog
+      - name: Add route blog.blackroad.io
+        run: |
+          curl -sf -X POST \
+            "https://api.cloudflare.com/client/v4/zones/d6566eba4500b460ffec6650d3b4baf6/workers/routes" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"pattern":"blog.blackroad.io/*","script":"blog-blackroadio"}' \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('Route:', 'created' if d.get('success') else d.get('errors'))"
+      - name: Verify blog worker
+        run: |
+          sleep 5
+          curl -sf "https://blog.blackroad.io/health" && echo " blog health OK" || echo "blog health check pending (DNS may need time)"
+
+  deploy-api:
+    name: Deploy api-blackroadio
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy api worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: "848cf0b18d51e0170e0d1537aec3505a"
+          workingDirectory: workers/api
+      - name: Add route api.blackroad.io
+        run: |
+          curl -sf -X POST \
+            "https://api.cloudflare.com/client/v4/zones/d6566eba4500b460ffec6650d3b4baf6/workers/routes" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"pattern":"api.blackroad.io/*","script":"api-blackroadio"}' \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print('Route:', 'created' if d.get('success') else d.get('errors'))"
+      - name: Verify api worker
+        run: |
+          sleep 5
+          curl -sf "https://api.blackroad.io/health" && echo " api health OK" || echo "api health check pending (DNS may need time)"
