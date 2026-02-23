@@ -81,6 +81,54 @@ function atom(worlds) {
 </feed>`
 }
 
+function feedHTML(worlds, stats) {
+  const { total, by_node } = stats
+  const aria64 = by_node.aria64 || 0
+  const alice = by_node.alice || 0
+  const worldListHTML = worlds.slice(0, 20).map(w => `
+    <div class="world-item">
+      <span class="type-${w.type}">[${w.type}]</span>
+      <strong>${w.title}</strong>
+      <span class="node">@${w.node}</span>
+      <small style="color:#555">${w.timestamp.replace("T", " ").slice(0, 16)}</small>
+    </div>`).join("")
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>🌍 BlackRoad World Generator</title>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="10">
+  <style>
+    body { background: #000; color: #fff; font-family: monospace; padding: 2rem; max-width: 900px; margin: 0 auto; }
+    h1 { color: #FF1D6C; margin-bottom: 0.5rem; }
+    h2 { color: #F5A623; border-bottom: 1px solid #333; padding-bottom: 0.5rem; }
+    .count { font-size: 4rem; color: #FF1D6C; font-weight: bold; line-height: 1; }
+    .nodes { color: #aaa; margin-bottom: 1.5rem; }
+    .nodes span { color: #F5A623; }
+    .world-item { padding: 0.5rem; border-bottom: 1px solid #222; display: flex; gap: 0.75rem; align-items: baseline; flex-wrap: wrap; }
+    .world-item:hover { background: #111; }
+    .node { color: #F5A623; }
+    .type-lore { color: #8B5CF6; }
+    .type-world { color: #10A37F; }
+    .type-code { color: #2979FF; }
+    a { color: #2979FF; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    footer { margin-top: 2rem; color: #444; font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <h1>🌍 BlackRoad World Generator</h1>
+  <div class="count">${total}</div>
+  <p>worlds generated</p>
+  <p class="nodes"><span>${aria64}</span> aria64 | <span>${alice}</span> alice | ~2/min</p>
+  <h2>Recent Worlds</h2>
+  ${worldListHTML}
+  <footer>Auto-refreshes every 10s · <a href="/stats">stats</a> · <a href="/rss">rss</a> · <a href="/recent?limit=20">recent JSON</a></footer>
+</body>
+</html>`
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url)
@@ -104,7 +152,31 @@ export default {
       const worlds = await fetchWorlds(env)
 
       let response
-      if (path === "/stats") {
+      if (path === "/health") {
+        response = new Response(JSON.stringify({
+          status: "ok",
+          total: worlds.length,
+          timestamp: new Date().toISOString()
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "max-age=30" }
+        })
+      } else if (path === "/recent") {
+        const limit = Math.min(parseInt(url.searchParams.get("limit") || "10", 10), 100)
+        const recent = worlds.slice(0, limit).map(({ id, title, node, type, path }) => ({ id, title, node, type, path }))
+        response = new Response(JSON.stringify({ worlds: recent, count: recent.length }, null, 2), {
+          headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": `max-age=${CACHE_TTL}` }
+        })
+      } else if (path === "/feed") {
+        const types = {}, nodes = {}
+        for (const w of worlds) {
+          types[w.type] = (types[w.type] || 0) + 1
+          nodes[w.node] = (nodes[w.node] || 0) + 1
+        }
+        const stats = { total: worlds.length, by_type: types, by_node: nodes }
+        response = new Response(feedHTML(worlds, stats), {
+          headers: { ...corsHeaders, "Content-Type": "text/html;charset=UTF-8", "Cache-Control": `max-age=30` }
+        })
+      } else if (path === "/stats") {
         const types = {}, nodes = {}
         for (const w of worlds) {
           types[w.type] = (types[w.type] || 0) + 1
